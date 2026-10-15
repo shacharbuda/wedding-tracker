@@ -214,6 +214,80 @@
       background: #fff;
     }
 
+    /* רכיב בחירה מרובה לקבוצות */
+    .multi-select-container {
+      position: relative;
+      user-select: none;
+    }
+
+    .multi-select-btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 170px;
+      font-size: 14px;
+      gap: 8px;
+    }
+
+    .multi-select-dropdown {
+      position: absolute;
+      top: calc(100% + 5px);
+      right: 0;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      z-index: 100;
+      width: 230px;
+      max-height: 260px;
+      overflow-y: auto;
+      display: none;
+      padding: 6px 0;
+    }
+
+    .multi-select-dropdown.active {
+      display: block;
+    }
+
+    .multi-select-actions {
+      padding: 4px 12px 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .multi-select-actions a {
+      color: var(--primary);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .multi-select-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 14px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+
+    .multi-select-option:hover {
+      background: #f1f5f9;
+    }
+
+    .multi-select-option input {
+      cursor: pointer;
+      margin: 0;
+    }
+
     .table-container {
       background: var(--card-bg);
       border-radius: 12px;
@@ -331,12 +405,24 @@
 
       <!-- סינונים -->
       <div class="filters-bar">
+        <!-- מסנן קבוצות מרובה -->
         <div class="filter-item">
-          <label>קבוצה:</label>
-          <select id="filter-group" onchange="applyFilters()">
-            <option value="ALL">כל הקבוצות</option>
-          </select>
+          <label>קבוצות:</label>
+          <div class="multi-select-container" id="group-multi-container">
+            <div class="multi-select-btn" onclick="toggleGroupDropdown(event)">
+              <span id="group-btn-text">כל הקבוצות</span>
+              <span style="font-size: 10px; color: var(--text-muted);">▼</span>
+            </div>
+            <div class="multi-select-dropdown" id="group-dropdown">
+              <div class="multi-select-actions">
+                <a onclick="selectAllGroups(true)">בחר הכל</a>
+                <a onclick="selectAllGroups(false)">נקה הכל</a>
+              </div>
+              <div id="group-checkboxes-list"></div>
+            </div>
+          </div>
         </div>
+
         <div class="filter-item">
           <label>סטטוס:</label>
           <select id="filter-status" onchange="applyFilters()">
@@ -369,6 +455,8 @@
 
   <script>
     let rawData = [];
+    let allAvailableGroups = [];
+    let selectedGroups = new Set();
     let statusChartInstance = null;
     let groupChartInstance = null;
 
@@ -386,7 +474,6 @@
 
     // ניסיון טעינה אוטומטית מקבצים באותה התיקייה
     async function loadDefaultExcel() {
-      // נבדוק שמות נפוצים (guests.xlsx או הקובץ המקורי)
       const possibleNames = ['guests.xlsx', 'guests (2).xlsx'];
       let loaded = false;
 
@@ -401,7 +488,7 @@
             break;
           }
         } catch (e) {
-          // fetch נכשל (למשל פתיחה מקומית כקובץ file://)
+          // fetch נכשל (למשל בפתיחה ללא שרת מקומי)
         }
       }
 
@@ -454,27 +541,86 @@
       applyFilters();
     }
 
+    // ניהול תפריט בחירה מרובה
+    function toggleGroupDropdown(event) {
+      event.stopPropagation();
+      document.getElementById('group-dropdown').classList.toggle('active');
+    }
+
+    // סגירת תפריט בלחיצה מחוץ לתפריט
+    document.addEventListener('click', function(e) {
+      const container = document.getElementById('group-multi-container');
+      if (container && !container.contains(e.target)) {
+        document.getElementById('group-dropdown').classList.remove('active');
+      }
+    });
+
+    function selectAllGroups(select) {
+      const checkboxes = document.querySelectorAll('#group-checkboxes-list input[type="checkbox"]');
+      selectedGroups.clear();
+      checkboxes.forEach(cb => {
+        cb.checked = select;
+        if (select) selectedGroups.add(cb.value);
+      });
+      updateGroupButtonLabel();
+      applyFilters();
+    }
+
+    function onGroupCheckboxChange(cb) {
+      if (cb.checked) {
+        selectedGroups.add(cb.value);
+      } else {
+        selectedGroups.delete(cb.value);
+      }
+      updateGroupButtonLabel();
+      applyFilters();
+    }
+
+    function updateGroupButtonLabel() {
+      const btnText = document.getElementById('group-btn-text');
+      const total = allAvailableGroups.length;
+      const count = selectedGroups.size;
+
+      if (count === 0) {
+        btnText.textContent = 'לא נבחרו קבוצות';
+      } else if (count === total) {
+        btnText.textContent = 'כל הקבוצות';
+      } else if (count === 1) {
+        btnText.textContent = Array.from(selectedGroups)[0];
+      } else {
+        btnText.textContent = `נבחרו (${count}) קבוצות`;
+      }
+    }
+
     function populateFilterOptions() {
-      const groupSelect = document.getElementById('filter-group');
+      allAvailableGroups = [...new Set(rawData.map(d => d.group))].sort();
+      selectedGroups = new Set(allAvailableGroups); // ברירת מחדל: כולן מסומנות
+
+      // מילוי רשימת הצ'קבוקסים
+      const listContainer = document.getElementById('group-checkboxes-list');
+      listContainer.innerHTML = allAvailableGroups.map((group, idx) => `
+        <label class="multi-select-option">
+          <input type="checkbox" value="${group}" checked onchange="onGroupCheckboxChange(this)">
+          <span>${group}</span>
+        </label>
+      `).join('');
+
+      updateGroupButtonLabel();
+
+      // סטטוסים
       const statusSelect = document.getElementById('filter-status');
-
-      const groups = [...new Set(rawData.map(d => d.group))].sort();
       const statuses = [...new Set(rawData.map(d => d.status))].sort();
-
-      groupSelect.innerHTML = '<option value="ALL">כל הקבוצות</option>' + 
-        groups.map(g => `<option value="${g}">${g}</option>`).join('');
-
       statusSelect.innerHTML = '<option value="ALL">כל הסטטוסים</option>' + 
         statuses.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
     function applyFilters() {
-      const selectedGroup = document.getElementById('filter-group').value;
       const selectedStatus = document.getElementById('filter-status').value;
       const query = document.getElementById('filter-search').value.toLowerCase().trim();
 
       const filtered = rawData.filter(d => {
-        const matchesGroup = (selectedGroup === 'ALL' || d.group === selectedGroup);
+        // בדיקה האם הקבוצה נבחרה בצ'קבוקסים
+        const matchesGroup = selectedGroups.has(d.group);
         const matchesStatus = (selectedStatus === 'ALL' || d.status === selectedStatus);
         const matchesSearch = !query || 
           d.name.toLowerCase().includes(query) || 
